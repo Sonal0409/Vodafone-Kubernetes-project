@@ -1,0 +1,329 @@
+
+On Master Node:
+
+# sudo wget https://raw.githubusercontent.com/lerndevops/labs/master/kubernetes/0-install/daemon.json -P /etc/docker
+# sudo systemctl restart docker.service
+
+Initialize kubernetes Master Node
+
+# sudo kubeadm init
+
+wait for few seconds for the task to complete.
+
+Execute these commands:
+
+  # mkdir -p $HOME/.kube
+  # sudo cp -i /etc/kubernetes/admin.conf $HOME/.kube/config
+  # sudo chown $(id -u):$(id -g) $HOME/.kube/config
+  
+  Wait for few seconds now and execute below command:
+  
+# kubectl apply -f https://raw.githubusercontent.com/projectcalico/calico/v3.24.1/manifests/calico.yaml
+
+# kubectl get nodes
+
+output will be like this:
+
+NAME               STATUS   ROLES                  AGE     VERSION
+ip-172-31-57-157   Ready    control-plane,master   2m40s   v1.23.4
+
+Execute below command o get a token for worker node
+
+# sudo kubeadm token create --print-join-command
+
+Now copy the generated token in a note pad
+
+Example token will look like these:
+kubeadm join 172.31.57.157:6443 --token u1bax4.diyl7ae60dksps65 --discovery-token-ca-cert-hash sha256:4eb21a2496352ce324f2e9fe0bc7b07c73033146705c6dfb09862e8b8b5c247d 
+
+===========================================================================================================
+
+Execute below steps on Worker Node
+===========================================================================================================
+# sudo su -
+
+# hostname WORKER1
+
+# sudo su -
+
+# sudo wget https://raw.githubusercontent.com/lerndevops/labs/master/kubernetes/0-install/daemon.json -P /etc/docker
+# sudo systemctl restart docker.service
+
+Copy the token from moster node and paste on Worker node
+example
+# kubeadm join 172.31.57.157:6443 --token u1bax4.diyl7ae60dksps65 --discovery-token-ca-cert-hash sha256:4eb21a2496352ce324f2e9fe0bc7b07c73033146705c6dfb09862e8b8b5c247d 
+
+you will copy your generated token
+
+Now worker will join the master
+
+==================================================================================
+
+On master execute below command:
+
+# kubectl get nodes
+
+both master worker nodes will be there.
+
+===========================================================================
+
+Project execution:
+
+Create an NFS server
+...
+
+sudo su mkdir -p /data
+cd /data
+...
+
+Install the NFS kernel server on the machine
+...
+
+sudo apt install nfs-kernel-server
+
+...
+
+Change the owner user and group to nobody and nogroup
+...
+
+sudo chown nobody:nogroup /data/
+
+Set permissions to 777 to allow everyone to read, write, and execute files in this directory
+
+sudo chmod 777 /data/
+
+...
+
+Open the exports file in the /etc directory for permission to access the host server machine
+...
+
+sudo vi /etc/exports
+
+Add the following code to the file:
+
+/data *(rw,sync,no_root_squash)
+
+Note: Exit the file and save the changes
+
+...
+
+Here: /data – is the share folder which server wants to share rw – This will all the clients to read and write the files to the share directory. sync – which will confirm the shared directory once the changes are committed. no_root_squash – This will all the root user to connect to the designated directory.
+
+Use the exportfs command to export all shared folders you registered in the /etc/exports file after making the appropriate changes
+sudo exportfs -rv
+
+Restart the NFS kernel server to apply the configuration changes
+sudo systemctl restart nfs-kernel-server
+
+...
+
+Deploy NFS client on worker nodes. Go to worker Node and execute below command
+...
+sudo apt install nfs-common
+
+=====================================================================
+On the MASTER node execute project YAML file:
+
+# cd
+
+# mkdir myprojec
+# cd myproject
+# vim mysqldemo.yml
+
+add below content in the file
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: mysql-nfs
+spec:
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteMany
+  mountOptions:
+    - hard
+    - nfsvers=4.1
+  nfs:
+    path: /data
+    server: <privateipMaster>
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: mysql-nfs
+spec:
+  accessModes:
+    - ReadWriteMany
+  resources:
+    requests:
+      storage: 500Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: mysql
+  labels:
+    app: mysql-wordpress
+spec:
+  ports:
+    - port: 3306
+  selector:
+    app: mysql-wordpress
+    product: mysql
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: mysql
+  labels:
+    app: mysql-wordpress
+spec:
+  selector:
+    matchLabels:
+      app: mysql-wordpress
+      product: mysql
+  template:
+    metadata:
+      labels:
+        app: mysql-wordpress
+        product: mysql
+    spec:
+      containers:
+      - image: mysql
+        name: mysql-container
+        env:
+        - name: MYSQL_DATABASE
+          value: wordpress
+        - name: MYSQL_ROOT_PASSWORD
+          value: password 
+        ports:
+        - containerPort: 3306
+          name: mysql
+        volumeMounts:
+        - name: mysql-storage
+          mountPath: /var/lib/mysql
+      volumes:
+      - name: mysql-storage
+        persistentVolumeClaim:
+          claimName: mysql-nfs
+
+===============================================================================================
+Execute below command
+
+# kubectl create -f mysqldemo.yml
+
+# kubectl get all
+
+=============================================================================================
+
+vim wordpress.yml
+
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: hostpath-pv
+  labels:
+    type: hostpath
+spec:
+  capacity:
+    storage: 2Gi
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  persistentVolumeReclaimPolicy: Delete
+  hostPath:
+    type: DirectoryOrCreate
+    path: "/opt/wordpress"
+---
+kind: PersistentVolumeClaim
+apiVersion: v1
+metadata:
+  name: wordpress-hostpath
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: ""
+  resources:
+    requests:
+      storage: 500Mi
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wordpress
+  labels:
+    app: mysql-wordpress
+spec:
+  ports:
+    - port: 80
+  selector:
+    app: mysql-wordpress
+    tier: frontend
+  type: NodePort
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wordpress
+  labels:
+    app: mysql-wordpress
+spec:
+  selector:
+    matchLabels:
+      app: mysql-wordpress
+      tier: frontend
+  strategy:
+    type: Recreate
+  template:
+    metadata:
+      labels:
+        app: mysql-wordpress
+        tier: frontend
+    spec:
+      containers:
+      - image: wordpress
+        name: wordpress
+        env:
+        - name: WORDPRESS_DB_HOST
+          value: mysql
+        - name: WORDPRESS_DB_USER
+          value: root
+        - name: WORDPRESS_DB_PASSWORD
+          value: password
+        ports:
+        - containerPort: 80
+          name: wordpress
+        volumeMounts:
+        - name: wordpress-storage
+          mountPath: /var/www/html
+      volumes:
+      - name: wordpress-storage
+        persistentVolumeClaim:
+          claimName: wordpress-hostpath
+          
+    # kubectl create -f wordpress.yml
+    # kubectl get all
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+  
+  
