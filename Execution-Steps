@@ -126,7 +126,7 @@ On the MASTER node execute project YAML file:
 
 # cd
 
-# mkdir myprojec
+# mkdir myproject
 # cd myproject
 # vim mysqldemo.yml
 
