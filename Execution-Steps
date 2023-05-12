@@ -72,7 +72,7 @@ Project execution:
 Create an NFS server
 ...
 
-sudo su mkdir -p /data
+sudo mkdir -p /data
 cd /data
 ...
 
