@@ -27,7 +27,7 @@ output will be like this:
 NAME               STATUS   ROLES                  AGE     VERSION
 ip-172-31-57-157   Ready    control-plane,master   2m40s   v1.23.4
 
-Execute below command o get a token for worker node
+Execute below command on Master node get a token
 
 # sudo kubeadm token create --print-join-command
 
