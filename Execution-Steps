@@ -69,6 +69,27 @@ both master worker nodes will be there.
 
 Project execution:
 
+Step 1: Create a namespace cep-project1
+
+kubectl create namespace cep-project1 -l slearn=project1
+
+Step 2: Create a service Account with name as Sandry and namespace = cep-project1
+
+kubectl create serviceaccount sandry --namespace cep-project1
+
+Step 3:
+Create a cluster role binding to the service account Sandry and give access as cluster admin role 
+
+kubectl create clusterrolebinding sandry-access --serviceaccount=cep-project1:sandry --clusterrole=cluster-admin
+
+Step 4:
+
+ Deploy the dashboard
+
+kubectl create -f https://raw.githubusercontent.com/sonal0409ORG/educka/master/dashboard/dashboard-insecure-v2.4.0.yml
+
+Step5: On Master node set up NFS server:
+====================================
 Create an NFS server
 ...
 
@@ -128,9 +149,22 @@ On the MASTER node execute project YAML file:
 
 # mkdir myproject
 # cd myproject
-# vim mysqldemo.yml
+Create secret to save mysql passowrd:
+vim secret.yml
 
-add below content in the file
+
+kind: Secret
+apiVersion: v1
+metadata:
+   name: mysql
+data:
+   password: "YWRtaW4="
+
+Save the file
+
+# kubectl create -f secret.yml
+
+# vim mysqldeploy.yml
 
 apiVersion: v1
 kind: PersistentVolume
@@ -146,7 +180,7 @@ spec:
     - nfsvers=4.1
   nfs:
     path: /data
-    server: <privateipMaster>
+    server: <privateipofMaster>
 ---
 kind: PersistentVolumeClaim
 apiVersion: v1
@@ -179,43 +213,47 @@ metadata:
   labels:
     app: mysql-wordpress
 spec:
+  replicas: 3
   selector:
     matchLabels:
       app: mysql-wordpress
-      product: mysql
   template:
     metadata:
       labels:
         app: mysql-wordpress
-        product: mysql
     spec:
       containers:
-      - image: mysql
-        name: mysql-container
-        env:
-        - name: MYSQL_DATABASE
-          value: wordpress
-        - name: MYSQL_ROOT_PASSWORD
-          value: password 
-        ports:
-        - containerPort: 3306
+        - image: mysql
           name: mysql
-        volumeMounts:
-        - name: mysql-storage
-          mountPath: /var/lib/mysql
+          args:
+            - "--default-authentication-plugin=mysql_native_password"
+          env:
+            - name: MYSQL_ROOT_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                   name: mysql
+                   key: password
+          ports:
+            - containerPort: 3306
+              name: mysql
+          volumeMounts:
+            - name: mysql-storage
+              mountPath: /var/lib/mysql
       volumes:
-      - name: mysql-storage
-        persistentVolumeClaim:
-          claimName: mysql-nfs
+        - name: mysql-storage
+          persistentVolumeClaim:
+            claimName: mysql-nfs  
 
 ===============================================================================================
 Execute below command
 
-# kubectl create -f mysqldemo.yml
+# kubectl create -f mysqldeploy.yml
 
 # kubectl get all
 
 =============================================================================================
+
+Deploy wordpress application.
 
 vim wordpress.yml
 
@@ -306,7 +344,10 @@ spec:
     # kubectl get all
 
 
+=================================
 
+Go to dashboard and verufy all the pods, services and deployments.
+Also check for namespace, clusterrolebinding, Persistent volume
 
 
 
